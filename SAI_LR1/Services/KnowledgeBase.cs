@@ -13,6 +13,7 @@ namespace SAI_LR1.Services
         private List<string> currentPath = new();
         private Node<KnowledgeItem>? currentItem;
         private Node<KnowledgeItem>? lastAnswerItem;
+        private Node<KnowledgeItem>? lastQuestionItem;
         private readonly IKnowledgeStorage storage;
 
         public KnowledgeBase() : this(new JsonKnowledgeStorage())
@@ -30,6 +31,7 @@ namespace SAI_LR1.Services
             currentPath.Clear();
             currentItem = root;
             lastAnswerItem = null;
+            lastQuestionItem = null;
             
             if (root == null)
                 return "База знаний пуста.";
@@ -55,7 +57,7 @@ namespace SAI_LR1.Services
 
             currentPath.Add(answer ? "Да" : "Нет");
 
-            Node<KnowledgeItem>? previousItem = currentItem;
+            lastQuestionItem = currentItem;
 
             if (answer)
             {
@@ -68,14 +70,7 @@ namespace SAI_LR1.Services
 
             if (currentItem == null)
             {
-                if (answer && previousItem.FalseChildNode != null && previousItem.FalseChildNode.IsLeaf)
-                {
-                    lastAnswerItem = previousItem.FalseChildNode;
-                }
-                else if (!answer && previousItem.TrueChildNode != null && previousItem.TrueChildNode.IsLeaf)
-                {
-                    lastAnswerItem = previousItem.TrueChildNode;
-                }
+                lastAnswerItem = null;
                 return "Сдаюсь.";
             }
 
@@ -115,16 +110,10 @@ namespace SAI_LR1.Services
             if (answerForNewItem)
             {
                 newQuestion.SetChildNode(newItemNode, true);
-                Node<KnowledgeItem> oldItemLeaf = new Node<KnowledgeItem>(new KnowledgeItem(oldItem, false));
-                newQuestion.SetChildNode(oldItemLeaf, false);
-                oldItemLeaf.SetParentNode(newQuestion);
             }
             else
             {
                 newQuestion.SetChildNode(newItemNode, false);
-                Node<KnowledgeItem> oldItemLeaf = new Node<KnowledgeItem>(new KnowledgeItem(oldItem, false));
-                newQuestion.SetChildNode(oldItemLeaf, true);
-                oldItemLeaf.SetParentNode(newQuestion);
             }
             
             newItemNode.SetParentNode(newQuestion);
@@ -149,6 +138,60 @@ namespace SAI_LR1.Services
             
             if (itemToReplace == null)
             {
+                if (lastQuestionItem != null && currentPath.Count > 0)
+                {
+                    string lastAnswer = currentPath[currentPath.Count - 1];
+                    bool wasTrueAnswer = lastAnswer == "Да";
+                    
+                    Node<KnowledgeItem> newQuestion = new Node<KnowledgeItem>(new KnowledgeItem(question, true));
+                    Node<KnowledgeItem> newItemNode = new Node<KnowledgeItem>(new KnowledgeItem(newItem, false));
+                    newItemNode.SetParentNode(newQuestion);
+                    
+                    string? oldItemText = null;
+                    if (wasTrueAnswer && lastQuestionItem.FalseChildNode != null && lastQuestionItem.FalseChildNode.IsLeaf)
+                    {
+                        oldItemText = lastQuestionItem.FalseChildNode.Value.Text;
+                    }
+                    else if (!wasTrueAnswer && lastQuestionItem.TrueChildNode != null && lastQuestionItem.TrueChildNode.IsLeaf)
+                    {
+                        oldItemText = lastQuestionItem.TrueChildNode.Value.Text;
+                    }
+                    
+                    if (oldItemText != null)
+                    {
+                        Node<KnowledgeItem> oldItemNode = new Node<KnowledgeItem>(new KnowledgeItem(oldItemText, false));
+                        oldItemNode.SetParentNode(newQuestion);
+                        
+                        if (answerForNewItem)
+                        {
+                            newQuestion.SetChildNode(newItemNode, true);
+                            newQuestion.SetChildNode(oldItemNode, false);
+                        }
+                        else
+                        {
+                            newQuestion.SetChildNode(newItemNode, false);
+                            newQuestion.SetChildNode(oldItemNode, true);
+                        }
+                    }
+                    else
+                    {
+                        if (answerForNewItem)
+                        {
+                            newQuestion.SetChildNode(newItemNode, true);
+                        }
+                        else
+                        {
+                            newQuestion.SetChildNode(newItemNode, false);
+                        }
+                    }
+                    
+                    NodeController.ReplaceNode(root, lastQuestionItem, newQuestion);
+                    currentItem = newQuestion;
+                    lastAnswerItem = null;
+                    lastQuestionItem = null;
+                    return;
+                }
+                
                 if (currentItem != null && currentItem.IsLeaf)
                 {
                     itemToReplace = currentItem;
